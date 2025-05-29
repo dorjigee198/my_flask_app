@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Employee Attrition Prediction</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        /* Additional inline styles for units and validation */
+        .unit-label {
+            font-size: 0.8em;
+            color: #6c757d;
+            font-weight: normal;
+            margin-left: 4px;
+        }
+        .input-container input::placeholder {
+            color: #ccc;
+            font-size: 0.9em;
+        }
+        .input-with-unit {
+            position: relative;
+        }
+        .input-with-unit::after {
+            content: attr(data-unit);
+            position: absolute;
+            right: 2.5rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #6c757d;
+            font-size: 0.9em;
+            pointer-events: none;
+        }
+        .error-field {
+            border-color: #f72585 !important;
+            box-shadow: 0 0 0 2px rgba(247, 37, 133, 0.2) !important;
+        }
+        .error-message {
+            color: #f72585;
+            font-size: 0.8rem;
+            margin-top: 0.25rem;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <header class="app-header">
+            <div class="logo-container">
+                <i class="fas fa-chart-line logo-icon"></i>
+                <h1>Employee Attrition Predictor</h1>
+            </div>
+            <p class="app-description">Predict employee turnover risk based on key HR metrics</p>
+        </header>
+
+        <main class="app-content">
+            <form action="/predict" method="post" class="prediction-form" id="predictionForm">
+                <div class="form-grid">
+                    {% for feature_name, config in features.items() %}
+                    <div class="form-group">
+                        <label for="{{ feature_name }}">
+                            {{ feature_name.split('(')[0].strip() }}
+                            {% if 'unit' in config %}
+                            <span class="unit-label">({{ config.unit }})</span>
+                            {% endif %}:
+                        </label>
+                        <div class="input-container {% if 'unit' in config %}input-with-unit{% endif %}" 
+                             {% if 'unit' in config %}data-unit="{{ config.unit }}"{% endif %}>
+                            {% if config.type == 'select' %}
+                                <select id="{{ feature_name }}" name="{{ feature_name }}" required>
+                                    <option value="">Select {{ feature_name.split('(')[0].strip() }}</option>
+                                    {% for option in config.options %}
+                                        <option value="{{ option }}">{{ option }}</option>
+                                    {% endfor %}
+                                </select>
+                            {% elif config.type == 'radio' %}
+                                <div class="radio-group">
+                                    {% for option in config.options %}
+                                        <label>
+                                            <input type="radio" name="{{ feature_name }}" value="{{ option }}" {% if loop.first %}required{% endif %}>
+                                            {{ option }}
+                                        </label>
+                                    {% endfor %}
+                                </div>
+                            {% else %}
+                                <input type="{{ config.type }}" 
+                                       id="{{ feature_name }}" 
+                                       name="{{ feature_name }}" 
+                                       {% if 'min' in config %}min="{{ config.min }}"{% endif %}
+                                       {% if 'max' in config %}max="{{ config.max }}"{% endif %}
+                                       required
+                                       placeholder="{% if 'description' in config %}{{ config.description }}{% endif %}">
+                            {% endif %}
+                            <i class="fas fa-info-circle tooltip-icon" 
+                               data-tooltip="{% if 'description' in config %}{{ config.description }}{% else %}Enter {{ feature_name.split('(')[0].strip() }}{% endif %}"></i>
+                        </div>
+                        <div class="error-message" id="error-{{ feature_name }}"></div>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <button type="submit" class="predict-button">
+                    <i class="fas fa-calculator"></i> Predict Attrition Risk
+                </button>
+            </form>
+
+            {% if prediction_text %}
+            <div class="result-container {{ result_class }}">
+                <div class="result-icon">
+                    {% if "High risk" in prediction_text %}
+                        <i class="fas fa-exclamation-triangle"></i>
+                    {% elif "Low risk" in prediction_text %}
+                        <i class="fas fa-check-circle"></i>
+                    {% else %}
+                        <i class="fas fa-exclamation-circle"></i>
+                    {% endif %}
+                </div>
+                <div class="result-content">
+                    <h3>Prediction Result</h3>
+                    <p>{{ prediction_text }}</p>
+                    {% if probability %}
+                    <div class="risk-meter">
+                        <div class="risk-level" style="width: {{ probability }}%;"></div>
+                    </div>
+                    {% endif %}
+                    {% if "High risk" in prediction_text %}
+                    <button class="action-button">
+                        <i class="fas fa-lightbulb"></i> View Retention Strategies
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+        </main>
+
+        <footer class="app-footer">
+            <p>HR Analytics Dashboard &copy; 2025</p>
+            <div class="footer-links">
+                <a href="#"><i class="fas fa-question-circle"></i> Help</a>
+                <a href="#"><i class="fas fa-cog"></i> Settings</a>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        // Tooltip functionality
+        document.querySelectorAll('.tooltip-icon').forEach(icon => {
+            const tooltip = document.createElement('span');
+            tooltip.className = 'tooltip-text';
+            tooltip.textContent = icon.dataset.tooltip;
+            icon.appendChild(tooltip);
+            
+            icon.addEventListener('mouseenter', () => {
+                tooltip.style.visibility = 'visible';
+                tooltip.style.opacity = '1';
+            });
+            
+            icon.addEventListener('mouseleave', () => {
+                tooltip.style.visibility = 'hidden';
+                tooltip.style.opacity = '0';
+            });
+        });
+
+        // Form validation
+        document.getElementById('predictionForm').addEventListener('submit', function(e) {
+            let isValid = true;
+            
+            // Reset all error states
+            document.querySelectorAll('.error-field').forEach(el => {
+                el.classList.remove('error-field');
+            });
+            document.querySelectorAll('.error-message').forEach(el => {
+                el.style.display = 'none';
+            });
+
+            // Validate each field
+            {% for feature_name, config in features.items() %}
+            {
+                const field = document.getElementById('{{ feature_name }}');
+                const errorElement = document.getElementById('error-{{ feature_name }}');
+                
+                // Check required fields
+                if (!field.value) {
+                    field.classList.add('error-field');
+                    errorElement.textContent = 'This field is required';
+                    errorElement.style.display = 'block';
+                    isValid = false;
+                } 
+                // Validate number fields
+                else if (field.type === 'number') {
+                    const value = parseFloat(field.value);
+                    const min = parseFloat(field.min);
+                    const max = parseFloat(field.max);
+                    
+                    if (isNaN(value)) {
+                        field.classList.add('error-field');
+                        errorElement.textContent = 'Please enter a valid number';
+                        errorElement.style.display = 'block';
+                        isValid = false;
+                    } else if ((!isNaN(min) && value < min) || (!isNaN(max) && value > max)) {
+                        field.classList.add('error-field');
+                        let message = 'Value must be ';
+                        if (!isNaN(min) && !isNaN(max)) {
+                            message += `between ${min} and ${max}`;
+                        } else if (!isNaN(min)) {
+                            message += `at least ${min}`;
+                        } else {
+                            message += `at most ${max}`;
+                        }
+                        errorElement.textContent = message;
+                        errorElement.style.display = 'block';
+                        isValid = false;
+                    }
+                }
+            }
+            {% endfor %}
+
+            if (!isValid) {
+                e.preventDefault();
+                // Scroll to first error
+                const firstError = document.querySelector('.error-field');
+                if (firstError) {
+                    firstError.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }
+        });
+
+        // Number input validation
+        document.querySelectorAll('input[type="number"]').forEach(input => {
+            input.addEventListener('change', () => {
+                const errorElement = document.getElementById(`error-${input.id}`);
+                const value = parseFloat(input.value);
+                const min = parseFloat(input.min);
+                const max = parseFloat(input.max);
+                
+                if (input.value && !isNaN(value)) {
+                    if (!isNaN(min) && value < min) {
+                        input.value = min;
+                    } else if (!isNaN(max) && value > max) {
+                        input.value = max;
+                    }
+                    input.classList.remove('error-field');
+                    if (errorElement) errorElement.style.display = 'none';
+                }
+            });
+        });
+    </script>
+</body>
+</html>
